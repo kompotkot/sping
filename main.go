@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -9,11 +10,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
-const PING_API_VERSION = "0.0.1"
+const PING_API_VERSION = "0.0.2"
 
 type Server struct {
 	Host string
@@ -127,6 +130,8 @@ func (server *Server) nowRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	shutdownTimeout := 5
+
 	var hostF, corsWhitelistF string
 	var portF int
 	flag.StringVar(&hostF, "host", "0.0.0.0", "Server host")
@@ -181,10 +186,26 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	log.Printf("Starting ping HTTP server at %s:%d and whitelisted CORS %v", server.Host, server.Port, corsSlice)
-	sErr := s.ListenAndServe()
-	if sErr != nil {
-		log.Printf("Failed to start server listener, err: %v", sErr)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		log.Printf("Starting ping HTTP server at %s:%d and whitelisted CORS %v", server.Host, server.Port, corsSlice)
+		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server error: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Printf("Shutting down server gracefully in %d seconds...", shutdownTimeout)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Duration(shutdownTimeout)*time.Second)
+	defer cancel()
+
+	if err := s.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Graceful shutdown failed: %v", err)
 		os.Exit(1)
 	}
+
+	log.Println("Server stopped")
 }

@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -18,9 +16,11 @@ import (
 const PING_API_VERSION = "0.0.1"
 
 type Server struct {
-	Host          string
-	Port          int
-	CORSWhitelist map[string]bool
+	Host string
+	Port int
+
+	CORSWhitelist         map[string]bool
+	AllowedDefaultMethods string
 }
 
 type PingResponse struct {
@@ -49,11 +49,16 @@ func (server *Server) corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		if allowedOrigin != "" {
+			allowHeaders := "Content-Type"
+			if allowedOrigin != "*" {
+				allowHeaders += ", Authorization"
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				// Don't allow credentials for wildcard
+			}
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET,OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", server.AllowedDefaultMethods)
 			// Credentials are cookies, authorization headers, or TLS client certificates
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
 		}
 
 		if r.Method == "OPTIONS" {
@@ -68,16 +73,6 @@ func (server *Server) corsMiddleware(next http.Handler) http.Handler {
 // Log access requests in proper format
 func (server *Server) logMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, readErr := io.ReadAll(r.Body)
-		if readErr != nil {
-			http.Error(w, "Unable to read body", http.StatusBadRequest)
-			return
-		}
-		r.Body = io.NopCloser(bytes.NewBuffer(body))
-		if len(body) > 0 {
-			defer r.Body.Close()
-		}
-
 		next.ServeHTTP(w, r)
 
 		var ip string
@@ -162,9 +157,11 @@ func main() {
 	}
 
 	server := Server{
-		Host:          hostF,
-		Port:          portF,
-		CORSWhitelist: corsWhitelist,
+		Host: hostF,
+		Port: portF,
+
+		CORSWhitelist:         corsWhitelist,
+		AllowedDefaultMethods: "GET,OPTIONS",
 	}
 
 	serveMux := http.NewServeMux()

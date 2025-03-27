@@ -133,10 +133,12 @@ func main() {
 	shutdownTimeout := 5
 
 	var hostF, corsWhitelistF string
-	var portF int
+	var portF, sReadTimeoutF, sWriteTimeoutF int
 	flag.StringVar(&hostF, "host", "0.0.0.0", "Server host")
 	flag.IntVar(&portF, "port", 9001, "Server port")
 	flag.StringVar(&corsWhitelistF, "cors", "*", "List of comma separated domains for CORS")
+	flag.IntVar(&sReadTimeoutF, "server-read-timeout", 10, "Server read timeout")
+	flag.IntVar(&sWriteTimeoutF, "server-write-timeout", 10, "Server write timeout")
 
 	flag.Parse()
 
@@ -182,8 +184,8 @@ func main() {
 	s := http.Server{
 		Addr:         fmt.Sprintf("%s:%d", server.Host, server.Port),
 		Handler:      commonHandler,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  time.Duration(sReadTimeoutF) * time.Second,
+		WriteTimeout: time.Duration(sWriteTimeoutF) * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
